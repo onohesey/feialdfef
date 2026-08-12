@@ -218,8 +218,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 # custom
+
 data/
 model/
 output/
 .DS_Store
 *.zip
+.ipynb
