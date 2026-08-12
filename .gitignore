@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# custom
+data/
+model/
+output/
+.DS_Store *.zip
