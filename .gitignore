@@ -221,4 +221,5 @@ __marimo__/
 data/
 model/
 output/
-.DS_Store *.zip
+.DS_Store
+*.zip
