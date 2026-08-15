@@ -1,4 +1,15 @@
 """CatBoost baseline: original columns only, without engineered features."""
+"""다시 해보기
+1.run_total_before과 score_diff_pitcher_team을 이용해서 투수팀의 점수와 타자팀의 점수를 나타내는 피처를 만들고  
+run_top_before과 run_bottom_before을 지운다. 
+
+2.base_state를 지움. 그리고 2루나 3루에 있으면 1을 나타내느 피처 추가
+
+3. top_bottom이 T면 home_win_expectancy를 적용 B면 away_win_expectancy를 적용. 그리고 둘을 뺀 값을 나타내는 피처 만들고 
+home_win,away_win 피처 삭제
+
+4. asof_pitcher_n과 asof_Batter_n을 루키 베테랑 레귤러 나누는 컬럼이랑 갭 차이를 나타내는 건 그대로 유지, 최근 폼과 관련된 컬럼도 유지"""
+
 import json
 import os
 import time
