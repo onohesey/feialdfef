@@ -1,74 +1,87 @@
+"""Contest inference entry point for the original-column CatBoost baseline."""
+import json
 import os
-import time
 
-import joblib
+import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.impute import SimpleImputer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OrdinalEncoder
+from catboost import CatBoostClassifier
 
-DATA_DIR = "./data"
+ID_COL, TARGET_COL = "row_id", "control_success"
+CAT_COLS = [
+    "top_bottom", "game_type",
+    "pitcher_id", "batter_id",
+    "pitcher_hand", "batter_hand",
+    "pitcher_team_id", "batter_team_id",
+    "pitcher_experience_stage", "batter_experience_stage",
+]
 
-ID = "row_id"
-TARGET = "control_success"
-CAT_COLS = ["top_bottom", "game_type", "base_state"]
 
-test_cols = pd.read_csv(os.path.join(DATA_DIR, "test.csv"),
-                        encoding="utf-8-sig", nrows=0).columns
-FEATURES = [c for c in test_cols if c != ID]
-NUM_COLS = [c for c in FEATURES if c not in CAT_COLS]
+def make_features(df):
+    """Use the same original columns and selected features as training."""
+    x = df.copy().drop(columns=[
+        ID_COL, "run_top_before", "run_bot_before", "base_state",
+    ], errors="ignore")
 
-train = pd.read_csv(os.path.join(DATA_DIR, "train.csv"),
-                    encoding="utf-8-sig", usecols=FEATURES + [TARGET])
+    x["pitcher_team_runs_before"] = (
+        x["run_total_before"] + x["score_diff_pitcher_team"]
+    ) / 2
+    x["batter_team_runs_before"] = (
+        x["run_total_before"] - x["score_diff_pitcher_team"]
+    ) / 2
+    x["runner_on_scoring_position"] = (
+        x["runner_on_2b"].eq(1) | x["runner_on_3b"].eq(1)
+    ).astype("int8")
 
-print("train:", train.shape, "| 피처:", len(FEATURES),
-      f"(범주형 {len(CAT_COLS)}, 수치형 {len(NUM_COLS)})")
-print("시즌:", train["season"].min(), "~", train["season"].max())
-print(f"제구 성공률: {train[TARGET].mean():.4f}")
+    x["pitcher_team_win_expectancy"] = np.where(
+        x["top_bottom"].eq("T"), x["home_win_expectancy"], x["away_win_expectancy"]
+    )
+    x["home_away_win_expectancy_diff"] = (
+        x["home_win_expectancy"] - x["away_win_expectancy"]
+    )
+    x = x.drop(columns=["home_win_expectancy", "away_win_expectancy"])
 
-preprocessor = ColumnTransformer([
-    ("cat", OrdinalEncoder(handle_unknown="use_encoded_value",
-                           unknown_value=-1), CAT_COLS),
-    ("num", SimpleImputer(strategy="median"), NUM_COLS),
-])
+    x["pitcher_experience_stage"] = np.select(
+        [x["asof_pitcher_n"] <= 500, x["asof_pitcher_n"] >= 4_000],
+        ["rookie", "veteran"], default="regular",
+    )
+    x["batter_experience_stage"] = np.select(
+        [x["asof_batter_n"] <= 600, x["asof_batter_n"] >= 5_000],
+        ["rookie", "veteran"], default="regular",
+    )
+    x["pitcher_batter_experience_gap"] = (
+        x["asof_pitcher_n"] - x["asof_batter_n"]
+    )
 
-model = Pipeline([
-    ("pre", preprocessor),
-    ("clf", RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_leaf=200,
-        n_jobs=-1,
-        random_state=42,
-    )),
-])
+    for n in (1, 3, 5):
+        x[f"pitcher_form_gap_{n}"] = (
+            x[f"asof_pitcher_prev{n}_game_success_rate"]
+            - x["asof_pitcher_success_rate"]
+        )
 
-# 2024 시즌을 검증용으로 떼어 두고 2019~2023 으로 학습합니다.
-is_val = train["season"] == 2024
-X_train, y_train = train.loc[~is_val, FEATURES], train.loc[~is_val, TARGET]
-X_val, y_val = train.loc[is_val, FEATURES], train.loc[is_val, TARGET]
-print("train:", len(X_train), "| val:", len(X_val))
+    for col in CAT_COLS:
+        x[col] = x[col].fillna("__MISSING__").astype(str)
+    return x
 
-t = time.time()
-model.fit(X_train, y_train)
-print(f"학습 완료 :: {time.time() - t:.1f}s")
 
-val_pred = model.predict_proba(X_val)[:, 1]
+def main():
+    test = pd.read_csv("./data/test.csv", encoding="utf-8-sig")
+    sub = pd.read_csv("./data/sample_submission.csv", encoding="utf-8-sig")
 
-r = y_val.mean()
-brier = ((val_pred - y_val) ** 2).mean()
-baseline_brier = r * (1 - r)
-score = max(0, 100000 * (1 - brier / baseline_brier))
+    with open("./model/metadata.json", encoding="utf-8") as f:
+        feature_columns = json.load(f)["feature_columns"]
+    X = make_features(test).reindex(columns=feature_columns)
 
-print(f"Brier: {brier:.6f} | 기준선 r(1-r): {baseline_brier:.6f}")
-print(f"Validation Score: {score:.2f}")
+    model = CatBoostClassifier()
+    model.load_model("./model/catboost.cbm")
+    pred_by_id = pd.Series(model.predict_proba(X)[:, 1], index=test[ID_COL])
+    sub[TARGET_COL] = sub[ID_COL].map(pred_by_id)
 
-t = time.time()
-model.fit(train[FEATURES], train[TARGET])
-print(f"재학습 완료 :: {time.time() - t:.1f}s")
+    if sub[TARGET_COL].isna().any() or not sub[TARGET_COL].between(0, 1).all():
+        raise ValueError("Invalid predictions")
+    os.makedirs("./output", exist_ok=True)
+    sub.to_csv("./output/submission.csv", index=False, encoding="utf-8")
+    print(f"Saved ./output/submission.csv ({len(sub)} rows)")
 
-os.makedirs("./model", exist_ok=True)
-joblib.dump(model, "./model/rf.pkl", compress=3)
-print("저장 완료: ./model/rf.pkl")
+
+if __name__ == "__main__":
+    main()
