@@ -153,3 +153,66 @@ assert abs(full_preds[0] - single_pred[0]) < 1e-9, "행 독립성 위반 가능�
 - [ ] `test.csv` 행 1개만으로 추론했을 때와 전체로 추론했을 때 동일 행의 예측값이 일치하는지 직접 테스트했는가 (6장 스니펫 참고)
 - [ ] GroupBy, rolling, target encoding, `test` 전체 통계(mean/std/rank 등) 코드가 추론 스크립트 어디에도 없는지 전체 코드 검색으로 확인했는가
 - [ ] 추론 시간이 10분 이내(245,789 샘플 기준)로 예상되는가
+
+## 8. 평가 서버 기본 설치 패키지
+
+평가 서버에는 아래 패키지(라이브러리)가 기본적으로 설치되어 있습니다. 버전이 명시된 패키지는 다른 버전을 사용할 경우 설치 에러가 발생할 수 있으므로, 가급적 아래 목록을 그대로 활용하고 제출하는 `requirements.txt`에는 포함하지 않는 것을 권장합니다.
+
+### 8.1 주요 설치 패키지(라이브러리)
+
+```
+torch==2.7.1+cu128
+pandas==2.0.3
+numpy==1.26.4
+scipy==1.15.3
+scikit-learn==1.8.0
+joblib==1.5.3
+threadpoolctl==3.6.0
+narwhals==2.21.2
+transformers==4.46.3
+accelerate==1.9.0
+sentencepiece==0.1.99
+regex==2023.12.25
+tqdm==4.66.4
+loguru==0.7.2
+pyyaml==6.0.1
+rich==13.7.1
+```
+
+### 8.2 주요 설치 시스템 패키지
+
+```
+git
+build-essential
+python3.11
+python3.11-dev
+python3.11-venv
+python3-pip
+libffi-dev
+libblas3
+liblapack3
+libomp-dev
+tzdata
+unzip
+p7zip-full
+gfortran
+libatlas-base-dev
+default-jre-headless
+cmake
+pkg-config
+ninja-build
+libgl1
+libglib2.0-0
+```
+
+### 8.3 유의사항
+
+- 제출 시 발생하는 오류는 아래 두 가지로 구분되며, **일일 제출 횟수 반영 기준이 다르므로** 반드시 숙지해야 합니다.
+
+| 오류 종류 | 발생 조건 | 일일 제출 횟수 반영 여부 |
+|---|---|---|
+| 설치 오류 | `submit.zip` 내부 구조 불일치, 패키지 설치 오류 | 반영 안 됨 |
+| 제출 오류 | `script.py` 코드 실행 후 발생하는 모든 오류 | 반영됨 |
+
+- `script.py` 내에서는 `./data` 디렉토리의 데이터를 로드하고, 예측 결과는 반드시 `./output` 디렉토리에 `submission.csv` 파일명으로 저장해야 합니다.
+- 평가 서버 환경은 인터넷 접속이 불가능하므로, 패키지 설치 이후 외부 다운로드가 필요한 코드나 모델은 작동하지 않습니다.
